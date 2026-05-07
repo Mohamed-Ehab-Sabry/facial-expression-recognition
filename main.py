@@ -19,8 +19,8 @@ def get_sample_images(source_root, max_samples=5):
 
 
 def main():
-    source_root = "../fer2013/versions/1"
-    target_root = "../fer2013/versions/1_preprocessed"
+    source_root = "fer2013/versions/1"
+    target_root = "fer2013/versions/1_preprocessed"
 
     print("Starting dataset preprocessing...")
     preprocess_dataset(source_root, target_root)
