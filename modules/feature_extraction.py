@@ -7,81 +7,92 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-# 1. Point to the physical model file you downloaded
-base_options = python.BaseOptions(model_asset_path='../modules/models/blaze_face_short_range.tflite')
+model_path='../modules/models/blaze_face_short_range.tflite'
 
-# 2. Configure the options (IMAGE mode is perfect for your FER dataset)
-options = vision.FaceDetectorOptions(base_options=base_options)
+try:
+    base_options = python.BaseOptions(model_asset_path=model_path)
+    options = vision.FaceDetectorOptions(base_options=base_options)
+    detector = vision.FaceDetector.create_from_options(options)
+    print("MediaPipe Face Detector initialized successfully!")
+except Exception as e:
+    print(f"Error initializing detector. Did you download the .tflite model?\n{e}")
 
-# 3. Create the detector instance
-detector = vision.FaceDetector.create_from_options(options)
-
-def extract_face_roi(preprocessed_img, target_size=(128, 128), upsample_size=(200, 200), margin=0.1, fallback=True):
+def extract_face_roi(image_path, target_size=(48, 48)):
     """
-    Extract face region from a preprocessed grayscale image.
-    
+    Extracts, crops, and resizes a face Region of Interest (ROI) from an image.
+
+    This function reads a grayscale image from the given path, temporarily converts 
+    it to RGB to fulfill MediaPipe's input requirements, and uses a pre-initialized 
+    MediaPipe Face Detector to locate the bounding box of the primary face. It then 
+    crops this bounding box from the original grayscale image and resizes it to a 
+    standardized dimension for feature extraction. 
+
+    If no face is detected by MediaPipe, or if the bounding box results in an empty 
+    crop, the function safely falls back to returning the resized original image 
+    to prevent dataset processing loops from crashing.
+
     Args:
-        preprocessed_img: 2D np.uint8 grayscale image (48x48 from FER2013)
-        target_size: desired output size (width, height) for the cropped face
-        upsample_size: size to upscale before detection (width, height)
-        margin: extra margin around detected face box (as fraction of box dimensions)
-        fallback: if True, return resized original image when no face is detected
-    
+        image_path (str): The file path to the input grayscale image.
+        target_size (tuple of int, optional): The desired output dimensions 
+            (width, height) for the returned face image. Defaults to (48, 48).
+
     Returns:
-        Cropped and resized face image (grayscale) or resized original if fallback.
+        numpy.ndarray: A 2D NumPy array representing the cropped, resized 
+            grayscale face. Returns None if the image file cannot be read.
     """
-    h, w = preprocessed_img.shape
-    us_w, us_h = upsample_size
-
-    # 1. Upsample to give the model more detail
-    img_upsampled = cv2.resize(preprocessed_img, upsample_size, interpolation=cv2.INTER_CUBIC)
+    # 1. Read the preprocessed image in Grayscale
+    gray_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     
-    # 2. CRITICAL: Convert to MediaPipe Image (requires RGB)
-    img_rgb = cv2.cvtColor(img_upsampled, cv2.COLOR_GRAY2RGB)
-    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
-    
-    # 3. Detect faces
-    result = detector.detect(mp_image)
-    
-    # 4. Process results
-    if result.detections:
-        # Pick the first detected face
-        detection = result.detections[0]
-        
-        # MediaPipe returns normalized coordinates (0.0 to 1.0)
-        bbox = detection.bounding_box
-        xmin = int(bbox.origin_x * us_w)
-        ymin = int(bbox.origin_y * us_h)
-        box_w = int(bbox.width * us_w)
-        box_h = int(bbox.height * us_h)
-
-        # Add margin
-        margin_w = int(box_w * margin)
-        margin_h = int(box_h * margin)
-        x1 = max(0, xmin - margin_w)
-        y1 = max(0, ymin - margin_h)
-        x2 = min(us_w, xmin + box_w + margin_w)
-        y2 = min(us_h, ymin + box_h + margin_h)
-
-        
-        # --- Safety check: ensure crop region is non-empty ---
-        if x1 >= x2 or y1 >= y2:
-            # Invalid bounding box → use fallback
-            if fallback:
-                return cv2.resize(preprocessed_img, target_size, interpolation=cv2.INTER_LINEAR)
-            else:
-                return None
-
-        # Crop and resize
-        face_crop = img_upsampled[y1:y2, x1:x2]
-        face_resized = cv2.resize(face_crop, target_size, interpolation=cv2.INTER_LINEAR)
-        return face_resized
-    
-    # Fallback: no face detected
-    if fallback:
-        return cv2.resize(preprocessed_img, target_size, interpolation=cv2.INTER_LINEAR)
-    else:
+    if gray_img is None:
+        print(f"Could not read image at {image_path}")
         return None
+        
+    img_height, img_width = gray_img.shape
+
+    # 2. Convert to RGB purely for MediaPipe detection
+    rgb_img = cv2.cvtColor(gray_img, cv2.COLOR_GRAY2RGB)
+    
+    # 3. Convert to MediaPipe Image format
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_img)
+    
+    # 4. Run detection
+    detection_result = detector.detect(mp_image)
+    
+    # 5. Handle cases where no face is found
+    if not detection_result.detections:
+        # Fallback: Just resize the whole original image if MediaPipe fails
+        # This prevents the training loop from crashing later.
+        print('=' * 20)
+        print('no detection')
+        print('=' * 20)
+        return cv2.resize(gray_img, target_size)
+        
+    # 6. Extract bounding box of the FIRST face detected
+    bbox = detection_result.detections[0].bounding_box
+    
+    # Extract coordinates (MediaPipe Tasks API gives absolute pixels)
+    x = bbox.origin_x
+    y = bbox.origin_y
+    w = bbox.width
+    h = bbox.height
+    
+    # 7. Safety check: Ensure coordinates don't go outside the image boundaries
+    x_start = max(0, x)
+    y_start = max(0, y)
+    x_end = min(img_width, x + w)
+    y_end = min(img_height, y + h)
+    
+    # 8. Crop from the ORIGINAL GRAYSCALE image
+    cropped_face = gray_img[y_start:y_end, x_start:x_end]
+    
+    # 9. Safety check: If the crop is somehow empty, return fallback
+    if cropped_face.size == 0:
+        return cv2.resize(gray_img, target_size)
+        
+    # 10. Resize to standard shape for HOG/LBP extraction later
+    final_face = cv2.resize(cropped_face, target_size)
+    
+    return final_face
 
 def extract_hog_features():
     pass
