@@ -1,11 +1,12 @@
-import skimage
 import sklearn
 import os
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from skimage.feature import hog
 
 model_path='../modules/models/blaze_face_short_range.tflite'
 
@@ -94,8 +95,46 @@ def extract_face_roi(image_path, target_size=(48, 48)):
     
     return final_face
 
-def extract_hog_features():
-    pass
+def extract_hog_features(img, pixels_per_cell = (8, 8), cells_per_block = (2, 2), orientations = 9, visualize = False):
+    """
+    Extract HOG features from a face image.
+    
+    Args:
+        img: 2D grayscale image (e.g., 48x48)
+        pixels_per_cell: cell size for gradient histogram
+        cells_per_block: block size for normalisation
+        orientations: number of orientation bins
+    
+    Returns:
+        1D numpy array of HOG features
+    """
+    
+    if visualize:
+        # Visualize HOG (optional for report/debugging)
+        _, hog_image = hog(img, orientations=orientations, pixels_per_cell=pixels_per_cell,
+                        cells_per_block=cells_per_block, visualize=True)
+        
+        plt.Figure(figsize= (8, 5))
+        plt.subplot(1, 2, 1)
+        plt.imshow(img, cmap= 'gray')
+        plt.title('original')
+        plt.axis('off')
+        
+        plt.subplot(1, 2, 2)
+        plt.imshow(hog_image, cmap= 'gray')
+        plt.title('HOG output')
+        plt.axis('off')
+        plt.show()
+    
+    features = hog(
+        img, orientations = orientations,
+        pixels_per_cell= pixels_per_cell,
+        cells_per_block = cells_per_block,
+        block_norm='L2-Hys', transform_sqrt=True,
+        feature_vector=True
+    )
+    
+    return features
 
 def extract_lpb_features():
     pass
