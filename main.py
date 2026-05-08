@@ -1,7 +1,6 @@
 import os
 from modules.preprocessing import preprocess_dataset, visualize_before_after
 
-
 def get_sample_images(source_root, max_samples=5):
     """Collect up to max_samples image paths from the source dataset."""
     valid_ext = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
@@ -17,10 +16,9 @@ def get_sample_images(source_root, max_samples=5):
 
     return sample_paths
 
-
 def main():
-    source_root = "../fer2013/versions/1"
-    target_root = "../fer2013/versions/1_preprocessed"
+    source_root = "fer2013/versions/1"
+    target_root = "fer2013/versions/1_preprocessed"
 
     print("Starting dataset preprocessing...")
     preprocess_dataset(source_root, target_root)
@@ -41,7 +39,7 @@ def main():
         print("Visualization complete. Saved as preprocessing_comparison.png")
     else:
         print("No images found to visualize.")
-
+        
 
 if __name__ == "__main__":
     main()
